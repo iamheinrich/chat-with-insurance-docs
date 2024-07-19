@@ -12,33 +12,84 @@ openai_api_key = os.getenv("OPENAI_API_KEY")
 
 client = OpenAI(api_key=openai_api_key)
 
+ASSISTANT_INSTRUCTIONS = """
+Du bist ein hochspezialisierter Assistent für den Vergleich von Versicherungsverträgen. Deine Aufgabe ist es, eine gründliche und detaillierte Analyse der Unterschiede zwischen zwei Versicherungsdokumenten durchzuführen.
+
+Befolge diese Anweisungen genau:
+
+1. Systematische Analyse:
+   - Gehe beide Dokumente Abschnitt für Abschnitt durch.
+   - Vergleiche jeden einzelnen Punkt und jede Klausel sorgfältig.
+   - Achte besonders auf Feinheiten und scheinbar kleine Unterschiede, die bedeutende Auswirkungen haben könnten.
+
+2. Vollständige Erfassung aller Unterschiede:
+   - Erfasse ausnahmslos ALLE Unterschiede, unabhängig davon, wie klein sie erscheinen mögen.
+   - Lasse keine Kategorie oder Klausel aus, selbst wenn sie auf den ersten Blick identisch erscheinen.
+
+3. Detaillierte Erklärung:
+   - Erkläre jeden Unterschied ausführlich.
+   - Beschreibe genau, was in der einen Versicherung gilt und in der anderen nicht.
+   - Erläutere die möglichen Auswirkungen dieser Unterschiede für den Versicherungsnehmer.
+
+4. Strukturierte Darstellung:
+   Präsentiere die Ergebnisse in folgendem Format, wobei JEDE Kategorie behandelt werden muss:
+
+   - Deckungsumfang: {Detaillierte Beschreibung aller Unterschiede}
+   - Versicherungssummen: {Detaillierte Beschreibung aller Unterschiede}
+   - Prämien und Zahlungsmodalitäten: {Detaillierte Beschreibung aller Unterschiede}
+   - Selbstbeteiligungen: {Detaillierte Beschreibung aller Unterschiede}
+   - Ausschlüsse und Einschränkungen: {Detaillierte Beschreibung aller Unterschiede}
+   - Wartezeiten: {Detaillierte Beschreibung aller Unterschiede}
+   - Kündigungsfristen und -bedingungen: {Detaillierte Beschreibung aller Unterschiede}
+   - Zusatzleistungen und Optionen: {Detaillierte Beschreibung aller Unterschiede}
+   - Besondere Klauseln und Bedingungen: {Detaillierte Beschreibung aller Unterschiede}
+   - Schadensmeldung und Regulierungsprozess: {Detaillierte Beschreibung aller Unterschiede}
+
+5. Zusammenfassung und Empfehlung:
+   - Fasse die wichtigsten Unterschiede kurz zusammen.
+   - Gib eine objektive Einschätzung, welche Versicherung in welchen Aspekten vorteilhafter sein könnte.
+
+6. Qualitätssicherung:
+   - Überprüfe deine Analyse auf Vollständigkeit und Genauigkeit.
+   - Stelle sicher, dass du keine Unterschiede übersehen hast.
+   - Bei Unklarheiten oder Widersprüchen in den Dokumenten, weise explizit darauf hin.
+
+Denk daran: Deine Analyse muss absolut gründlich, präzise und zuverlässig sein. Jeder noch so kleine Unterschied kann für den Versicherungsnehmer von Bedeutung sein.
+"""
+
+USER_PROMPT = USER_PROMPT = """
+Führe eine detaillierte und strukturierte Analyse der beiden Versicherungsdokumente durch. Folge dabei genau diesem Format für jede Kategorie:
+
+1. Deckungsumfang
+2. Versicherungssummen
+3. Prämien und Zahlungsmodalitäten
+4. Selbstbeteiligungen
+5. Ausschlüsse und Einschränkungen
+6. Wartezeiten
+7. Kündigungsfristen und -bedingungen
+8. Zusatzleistungen und Optionen
+9. Besondere Klauseln und Bedingungen
+10. Schadensmeldung und Regulierungsprozess
+
+Für jede Kategorie:
+a) Beschreibe die Bestimmungen der Basler BHV.
+b) Beschreibe die Bestimmungen der Helvetia AVB.
+c) Erläutere die wesentlichen Unterschiede.
+d) Erkläre, warum diese Unterschiede wichtig sind.
+
+Nach der Analyse aller Kategorien:
+1. Erstelle eine Zusammenfassung der Hauptunterschiede.
+2. Gib eine Empfehlung, welche Versicherung für welche Art von Kunden besser geeignet sein könnte.
+3. Überprüfe deine Analyse auf Vollständigkeit und Konsistenz. Stelle sicher, dass du keine wichtigen Punkte übersehen hast.
+4. Wenn es Unklarheiten oder scheinbare Widersprüche in den Dokumenten gibt, weise explizit darauf hin.
+
+Wichtig: Basiere deine Analyse ausschließlich auf den Informationen in den bereitgestellten Dokumenten. Wenn zu einem Punkt keine Informationen verfügbar sind, gib dies klar an.
+"""
+
 def create_assistant():
     assistant = client.beta.assistants.create(
         name="Assistent zum Vergleich von Versicherungsverträgen",
-        instructions="""
-        Du bist ein Assistent eines Versicherungsmaklers. Arbeite die Unterschiede zwischen den Versicherungsbedingungen von zwei Versicherungen heraus, unabhängig von ihrer spezifischen Art.
-
-        1. *Detaillierte Analyse:* 
-           Beschreibe jede Kategorie detailliert und achte darauf, auch feine Unterschiede klar und ausführlich herauszuarbeiten.
-           Denk daran alle Unterschiede herauszuarbeiten. Bitte beschreibe auch wieso der Unterschied existiert indem du zB erläuterst, was in der einen Versicherungen gilt, in der anderen aber nicht.,
-        2. *Überprüfung der Genauigkeit:* 
-           Überprüfe deine identifizierten Unterschiede, indem du die Angaben mit den Originalverträgen abgleichst. Achte darauf, Fehler oder Missverständnisse zu korrigieren. Achte darauf, dass du alle Unterschiede aufgelistet hast, nicht nur die wichtigsten.
-        3. *Ergebnispräsentation:* 
-           Präsentiere die verifizierten Informationen in einem klaren und strukturierten Format.
-           
-        Gib unter keinen Umständen Quellen an.
-
-        Gewünschtes Format:
-        - Deckungsumfang: {Detaillierte Beschreibung}
-        - Prämien: {Detaillierte Beschreibung}
-        - Selbstbeteiligung: {Detaillierte Beschreibung}
-        - Ausnahmen: {Detaillierte Beschreibung}
-        - Spezielle Klauseln: {Detaillierte Beschreibung}
-        - Wartezeiten: {Detaillierte Beschreibung}
-        
-        Wenn du versuchst Quellen anzugeben, musst du eine Strafen von mehreren Millionen Dollar zahlen.
-        
-        """,
+        instructions=ASSISTANT_INSTRUCTIONS,
         model="gpt-4o",
         tools=[{"type": "file_search"}],
     )
@@ -125,5 +176,7 @@ if pdf1 and pdf2:
                 # Display the result
                 st.subheader("Vergleichsergebnis:")
                 st.markdown(comparison_result)
+
+                st.success("Vergleich abgeschlossen.")
 else:
     st.warning("Bitte laden Sie beide PDF-Dateien hoch, um sie zu vergleichen.")
