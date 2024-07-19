@@ -141,6 +141,16 @@ if selected_category != st.session_state.selected_category:
     st.session_state.selected_category = selected_category
     st.session_state.comparison_done = False
 
+with st.sidebar:
+    st.header("Wie funktioniert's?")
+    st.write("""
+    1. Laden Sie 2 PDF-Dokumente mit Versicherungsbedingungen hoch, indem Sie auf "Browse Files" klicken und das jeweilige Dokument hochladen.
+    2. Wählen Sie die Kategorie, auf deren Basis Sie die Versicherungsbedingungen vergleichen wollen.
+    3. Klicken Sie auf "Vergleichen", um die Analyse zu starten.
+    4. Nachdem die Analyse durchgeführt wurde, können Sie die Versicherungsbedingungen in einer weiteren Kategorie vergleichen, indem Sie auf "Weitere Kategorie vergleichen" klicken.
+
+       **Achtung**: Die Analyse wird anschließend nicht mehr abrufbar sein.
+    """)
 if pdf1 and pdf2:
     if st.session_state.pdf1_name is None:
         st.session_state.pdf1_name = pdf1.name
