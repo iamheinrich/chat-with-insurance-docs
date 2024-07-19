@@ -56,6 +56,9 @@ def update_assistant_with_vector_store(assistant, vector_store):
         tool_resources={"file_search": {"vector_store_ids": [vector_store.id]}},
     )
 
+def some_function():
+    print("This is a test function to check if a commit would change the git history")
+
 def compare_pdfs(assistant, pdf1_name, pdf2_name):
     thread = client.beta.threads.create(
         messages=[
