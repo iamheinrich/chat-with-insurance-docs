@@ -1,8 +1,36 @@
 import streamlit as st
+import streamlit_authenticator as stauth
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
 import tempfile
+import yaml
+from yaml.loader import SafeLoader
+
+#Create the authenticator
+
+# Authentication in local development
+# with open('config.yaml') as file:
+#     config = yaml.load(file, Loader=SafeLoader)
+#
+# authenticator = stauth.Authenticate(
+#     config['credentials'],
+#     config['cookie']['name'],
+#     config['cookie']['key'],
+#     config['cookie']['expiry_days']
+# )
+
+
+# Authentication in production
+authenticator = stauth.Authenticate(
+    dict(st.secrets['credentials']),
+    st.secrets['cookie']['name'],
+    st.secrets['cookie']['key'],
+    st.secrets['cookie']['expiry_days'],
+)
+
+#Render login module
+authenticator.login()
 
 # Load environment variables
 load_dotenv()
@@ -69,139 +97,151 @@ def generate_user_prompt(category, doc1_name, doc2_name):
     Wichtig: Basiere deine Analyse ausschließlich auf den Informationen in den bereitgestellten Dokumenten. Wenn zu einem Punkt keine Informationen verfügbar sind, gib dies klar an.
     """
 
-@st.cache_resource
-def create_assistant(instructions):
-    assistant = client.beta.assistants.create(
-        name="Assistent zum Vergleich von Versicherungsverträgen",
-        instructions=instructions,
-        model="gpt-4o",
-        tools=[{"type": "file_search"}],
-    )
-    return assistant
+if st.session_state["authentication_status"]:
+    #If the authentication succeeded, render the app
 
-@st.cache_resource
-def create_vector_store():
-    return client.beta.vector_stores.create(name="Versicherungsbedingungen")
+    authenticator.logout()
+    @st.cache_resource
+    def create_assistant(instructions):
+        assistant = client.beta.assistants.create(
+            name="Assistent zum Vergleich von Versicherungsverträgen",
+            instructions=instructions,
+            model="gpt-4o",
+            tools=[{"type": "file_search"}],
+        )
+        return assistant
 
-def upload_files_to_vector_store(vector_store, files):
-    file_batch = client.beta.vector_stores.file_batches.upload_and_poll(
-        vector_store_id=vector_store.id, files=files
-    )
-    return file_batch
+    @st.cache_resource
+    def create_vector_store():
+        return client.beta.vector_stores.create(name="Versicherungsbedingungen")
 
-def update_assistant_with_vector_store(assistant, vector_store):
-    return client.beta.assistants.update(
-        assistant_id=assistant.id,
-        tool_resources={"file_search": {"vector_store_ids": [vector_store.id]}},
-    )
+    def upload_files_to_vector_store(vector_store, files):
+        file_batch = client.beta.vector_stores.file_batches.upload_and_poll(
+            vector_store_id=vector_store.id, files=files
+        )
+        return file_batch
 
-def compare_pdfs(assistant, pdf1_name, pdf2_name, category):
-    user_prompt = generate_user_prompt(category, pdf1_name, pdf2_name)
-    thread = client.beta.threads.create(
-        messages=[
-            {
-                "role": "user",
-                "content": user_prompt,
-            }
-        ]
-    )
-    run = client.beta.threads.runs.create_and_poll(
-        thread_id=thread.id, assistant_id=assistant.id
-    )
-    messages = list(client.beta.threads.messages.list(thread_id=thread.id, run_id=run.id))
-    if not messages:
-        return "Keine Nachrichten wurden zurückgegeben. Möglicherweise ist ein Fehler aufgetreten."
-    message_content = messages[0].content[0].text
-    return message_content.value
+    def update_assistant_with_vector_store(assistant, vector_store):
+        return client.beta.assistants.update(
+            assistant_id=assistant.id,
+            tool_resources={"file_search": {"vector_store_ids": [vector_store.id]}},
+        )
 
-st.title("Versicherungsverträge Vergleich")
+    def compare_pdfs(assistant, pdf1_name, pdf2_name, category):
+        user_prompt = generate_user_prompt(category, pdf1_name, pdf2_name)
+        thread = client.beta.threads.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": user_prompt,
+                }
+            ]
+        )
+        run = client.beta.threads.runs.create_and_poll(
+            thread_id=thread.id, assistant_id=assistant.id
+        )
+        messages = list(client.beta.threads.messages.list(thread_id=thread.id, run_id=run.id))
+        if not messages:
+            return "Keine Nachrichten wurden zurückgegeben. Möglicherweise ist ein Fehler aufgetreten."
+        message_content = messages[0].content[0].text
+        return message_content.value
 
-# Use session state to manage button visibility and comparison status
-if 'comparison_done' not in st.session_state:
-    st.session_state.comparison_done = False
+    st.title("Versicherungsverträge Vergleich")
 
-if 'selected_category' not in st.session_state:
-    st.session_state.selected_category = None
+    # Use session state to manage button visibility and comparison status
+    if 'comparison_done' not in st.session_state:
+        st.session_state.comparison_done = False
 
-if 'pdf1_name' not in st.session_state:
-    st.session_state.pdf1_name = None
+    if 'selected_category' not in st.session_state:
+        st.session_state.selected_category = None
 
-if 'pdf2_name' not in st.session_state:
-    st.session_state.pdf2_name = None
+    if 'pdf1_name' not in st.session_state:
+        st.session_state.pdf1_name = None
 
-# File upload
-pdf1 = st.file_uploader("Laden Sie die erste PDF-Datei hoch", type="pdf")
-pdf2 = st.file_uploader("Laden Sie die zweite PDF-Datei hoch", type="pdf")
+    if 'pdf2_name' not in st.session_state:
+        st.session_state.pdf2_name = None
 
-# Category selection
-selected_category = st.selectbox("Wählen Sie eine Kategorie für die Analyse", categories)
+    # File upload
+    pdf1 = st.file_uploader("Laden Sie die erste PDF-Datei hoch", type="pdf")
+    pdf2 = st.file_uploader("Laden Sie die zweite PDF-Datei hoch", type="pdf")
 
-# Update session state
-if selected_category != st.session_state.selected_category:
-    st.session_state.selected_category = selected_category
-    st.session_state.comparison_done = False
+    # Category selection
+    selected_category = st.selectbox("Wählen Sie eine Kategorie für die Analyse", categories)
 
-with st.sidebar:
-    st.header("Wie funktioniert's?")
-    st.write("""
-    1. Laden Sie 2 PDF-Dokumente mit Versicherungsbedingungen hoch, indem Sie auf "Browse Files" klicken und das jeweilige Dokument hochladen.
-    2. Wählen Sie die Kategorie, auf deren Basis Sie die Versicherungsbedingungen vergleichen wollen.
-    3. Klicken Sie auf "Vergleichen", um die Analyse zu starten.
-    4. Nachdem die Analyse durchgeführt wurde, können Sie die Versicherungsbedingungen in einer weiteren Kategorie vergleichen, indem Sie auf "Weitere Kategorie vergleichen" klicken.
+    # Update session state
+    if selected_category != st.session_state.selected_category:
+        st.session_state.selected_category = selected_category
+        st.session_state.comparison_done = False
 
-       **Achtung**: Die Analyse wird anschließend nicht mehr abrufbar sein.
-    """)
-if pdf1 and pdf2:
-    if st.session_state.pdf1_name is None:
-        st.session_state.pdf1_name = pdf1.name
-    if st.session_state.pdf2_name is None:
-        st.session_state.pdf2_name = pdf2.name
+    with st.sidebar:
+        st.header("Wie funktioniert's?")
+        st.write("""
+        1. Laden Sie 2 PDF-Dokumente mit Versicherungsbedingungen hoch, indem Sie auf "Browse Files" klicken und das jeweilige Dokument hochladen.
+        2. Wählen Sie die Kategorie, auf deren Basis Sie die Versicherungsbedingungen vergleichen wollen.
+        3. Klicken Sie auf "Vergleichen", um die Analyse zu starten.
+        4. Nachdem die Analyse durchgeführt wurde, können Sie die Versicherungsbedingungen in einer weiteren Kategorie vergleichen, indem Sie auf "Weitere Kategorie vergleichen" klicken.
+    
+           **Achtung**: Die Analyse wird anschließend nicht mehr abrufbar sein.
+        """)
+    if pdf1 and pdf2:
+        if st.session_state.pdf1_name is None:
+            st.session_state.pdf1_name = pdf1.name
+        if st.session_state.pdf2_name is None:
+            st.session_state.pdf2_name = pdf2.name
 
-    st.success("Beide PDF-Dateien wurden erfolgreich hochgeladen.")
+        st.success("Beide PDF-Dateien wurden erfolgreich hochgeladen.")
 
-    if not st.session_state.comparison_done:
-        if st.button("Vergleichen"):
-            with st.spinner("Vergleiche die Versicherungsverträge... Das kann einen Moment dauern"):
-                # Create a temporary directory to store the uploaded files
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    # Save the uploaded files to the temporary directory
-                    pdf1_path = os.path.join(temp_dir, pdf1.name)
-                    pdf2_path = os.path.join(temp_dir, pdf2.name)
+        if not st.session_state.comparison_done:
+            if st.button("Vergleichen"):
+                with st.spinner("Vergleiche die Versicherungsverträge... Das kann einen Moment dauern"):
+                    # Create a temporary directory to store the uploaded files
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        # Save the uploaded files to the temporary directory
+                        pdf1_path = os.path.join(temp_dir, pdf1.name)
+                        pdf2_path = os.path.join(temp_dir, pdf2.name)
 
-                    with open(pdf1_path, "wb") as f:
-                        f.write(pdf1.getvalue())
-                    with open(pdf2_path, "wb") as f:
-                        f.write(pdf2.getvalue())
+                        with open(pdf1_path, "wb") as f:
+                            f.write(pdf1.getvalue())
+                        with open(pdf2_path, "wb") as f:
+                            f.write(pdf2.getvalue())
 
-                    # Generate dynamic instructions
-                    instructions = generate_instructions(selected_category, pdf1.name, pdf2.name)
+                        # Generate dynamic instructions
+                        instructions = generate_instructions(selected_category, pdf1.name, pdf2.name)
 
-                    # Create the assistant
-                    assistant = create_assistant(instructions)
+                        # Create the assistant
+                        assistant = create_assistant(instructions)
 
-                    # Create vector store
-                    vector_store = create_vector_store()
+                        # Create vector store
+                        vector_store = create_vector_store()
 
-                    # Upload files to vector store
-                    with open(pdf1_path, "rb") as f1, open(pdf2_path, "rb") as f2:
-                        file_batch = upload_files_to_vector_store(vector_store, [f1, f2])
+                        # Upload files to vector store
+                        with open(pdf1_path, "rb") as f1, open(pdf2_path, "rb") as f2:
+                            file_batch = upload_files_to_vector_store(vector_store, [f1, f2])
 
-                    # Update assistant with vector store
-                    assistant = update_assistant_with_vector_store(assistant, vector_store)
+                        # Update assistant with vector store
+                        assistant = update_assistant_with_vector_store(assistant, vector_store)
 
-                    # Compare the PDFs
-                    comparison_result = compare_pdfs(assistant, pdf1.name, pdf2.name, selected_category)
+                        # Compare the PDFs
+                        comparison_result = compare_pdfs(assistant, pdf1.name, pdf2.name, selected_category)
 
-                    # Display the result
-                    st.subheader("Vergleichsergebnis:")
-                    st.markdown(comparison_result)
+                        # Display the result
+                        st.subheader("Vergleichsergebnis:")
+                        st.markdown(comparison_result)
 
-                    # Mark comparison as done
-                    st.session_state.comparison_done = True
+                        # Mark comparison as done
+                        st.session_state.comparison_done = True
 
-    if st.session_state.comparison_done:
-        if st.button("Weitere Kategorie vergleichen"):
-            st.session_state.comparison_done = False
-            st.rerun()
-else:
-    st.warning("Bitte laden Sie beide PDF-Dateien hoch, um sie zu vergleichen.")
+        if st.session_state.comparison_done:
+            if st.button("Weitere Kategorie vergleichen"):
+                st.session_state.comparison_done = False
+                st.rerun()
+    else:
+        st.warning("Bitte laden Sie beide PDF-Dateien hoch, um sie zu vergleichen.")
+
+#Render error if credentials wrong
+elif st.session_state["authentication_status"] is False:
+    st.error('Username/password is incorrect')
+
+#Request user to login if no login attempt has happened
+elif st.session_state["authentication_status"] is None:
+    st.warning('Please enter your username and password')
